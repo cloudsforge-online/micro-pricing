@@ -8,7 +8,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { RATE_SCALE, SHARDS_PER_USD } from '@cloudsforge/contracts-chain'
+import { ON_CHAIN_ASSETS, RATE_SCALE, SHARDS_PER_USD } from '@cloudsforge/contracts-chain'
 import {
   ADMINISTERED_ASSETS,
   MARKET_ASSETS,
@@ -232,6 +232,27 @@ test('the market and administered sets are disjoint, and derived from the chain 
     assert.ok(!MARKET_ASSETS.includes(asset), `${asset} is in both sets`)
   }
   assert.deepEqual([...ADMINISTERED_ASSETS], ['EMBER'])
-  assert.deepEqual([...MARKET_ASSETS].sort(), ['BTC', 'ETH', 'SOL', 'XRP'])
+
+  // DERIVED, NOT RESTATED. This line used to read `['BTC', 'ETH', 'SOL', 'XRP']`, and it went red
+  // the day LTC was added to `ON_CHAIN_ASSETS` — correctly, but for the wrong reason: it was
+  // reporting that a hand-typed list had gone stale, not that anything was wrong. Restating the
+  // expected set here makes this test a second declaration of `ON_CHAIN_ASSETS`, which is the exact
+  // drift `rates.ts` avoids by deriving `MARKET_ASSETS` in the first place.
+  //
+  // The property actually worth asserting is the PARTITION: every on-chain asset is either quoted
+  // by a market or set by an operator, and none is both or neither. An asset that fell out of both
+  // sets would have no price at all, and `quoteFor` would fail closed on it for ever without
+  // anything naming why.
+  assert.deepEqual(
+    [...MARKET_ASSETS].sort(),
+    [...ON_CHAIN_ASSETS].filter((asset) => !ADMINISTERED_ASSETS.includes(asset)).sort(),
+  )
+  assert.deepEqual([...QUOTED_ASSETS].sort(), [...ON_CHAIN_ASSETS].sort())
   assert.equal(QUOTED_ASSETS.length, MARKET_ASSETS.length + ADMINISTERED_ASSETS.length)
+
+  // Non-vacuous, and specific enough to catch a partition that has silently emptied: the two
+  // assets whose presence this repository's behaviour is actually built around.
+  assert.ok(MARKET_ASSETS.includes('BTC'))
+  assert.ok(MARKET_ASSETS.includes('LTC'))
+  assert.ok(MARKET_ASSETS.length >= 5)
 })
