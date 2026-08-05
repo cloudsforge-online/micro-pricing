@@ -16,7 +16,7 @@ import { Lifecycle } from '@cloudsforge/lifecycle'
 import { Logger, Metrics, registerHttpMetrics, registerJobMetrics } from '@cloudsforge/telemetry'
 import { createServer, registerServiceMetrics, type PrincipalVerifier } from './server.ts'
 import { recordAccepted, recordFailure } from './quotes.ts'
-import { parseScaled } from './rates.ts'
+import { QUOTED_ASSETS, parseScaled } from './rates.ts'
 import { enabled, migrateTestDb, openDb, resetPricing, skip } from './testsupport.ts'
 import type { Db } from './outbox.ts'
 
@@ -145,7 +145,14 @@ test('GET /rates is public and lists every asset, usable or not', { skip }, asyn
 
   const rates = (response.body as unknown as { rates: Array<Record<string, unknown>> }).rates
   const assets = rates.map((r) => r['asset'])
-  assert.deepEqual(assets, ['BTC', 'ETH', 'SOL', 'XRP', 'EMBER'])
+  // DERIVED. This read `['BTC', 'ETH', 'SOL', 'XRP', 'EMBER']` and was the last hand-typed asset
+  // list in this repository — it survived the LTC release right up to the point a database was
+  // attached, because it is gated on PRICING_TEST_DATABASE_URL and SKIPS without one. A pinned list
+  // inside a test that does not run by default is the worst combination of the two: it fails only
+  // in the environment that is hardest to reproduce, and it is silent everywhere else.
+  //
+  // Market assets first, then administered — the board's own order, which `QUOTED_ASSETS` is.
+  assert.deepEqual(assets, [...QUOTED_ASSETS])
 
   const btc = rates.find((r) => r['asset'] === 'BTC')
   assert.equal(btc?.['usable'], true)
