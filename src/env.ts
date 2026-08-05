@@ -33,17 +33,6 @@ export class EnvError extends Error {
   }
 }
 
-const PLACEHOLDERS = new Set([
-  'changeme',
-  'change-me',
-  'placeholder',
-  'secret',
-  'dev-secret',
-  'dev-outbox-signing-secret',
-  'replace-with-a-real-secret',
-  'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-])
-
 type Source = Readonly<Record<string, string | undefined>>
 
 function required(source: Source, name: string): string {
@@ -52,24 +41,13 @@ function required(source: Source, name: string): string {
   return value
 }
 
-function requiredSecret(source: Source, name: string, minLength = 24): string {
-  const value = required(source, name)
-  if (PLACEHOLDERS.has(value.toLowerCase())) {
-    throw new EnvError(`${name} is set to a known placeholder — generate a real secret`)
-  }
-  // Length is a proxy for entropy and the only one available here. It is set above the point at
-  // which a human-chosen string is plausible, so a memorable password fails this check too.
-  if (value.length < minLength) {
-    throw new EnvError(`${name} must be at least ${minLength} characters (got ${value.length})`)
-  }
-  return value
-}
-
 /**
  * The estate's shared event-bus HMAC key, held to a shape rather than to a deny-list.
  *
- * `requiredSecret` above cannot be the guard for this one. It refuses a fixed list of exact
- * strings and anything under 24 characters, and the value that sat on 54 lines of a PUBLIC compose
+ * THE LOCAL `requiredSecret` AND `PLACEHOLDERS` ARE GONE RATHER THAN KEPT IN FRONT — they were
+ * DEAD CODE, called by nothing, sitting in the file looking like a control. They refused a fixed
+ * list of exact strings and anything under 24 characters, and the value that sat on 54 lines of a
+ * PUBLIC compose
  * file — `estate-only-outbox-secret-00000000000000` — was on no list and was 40 characters, so it
  * passed every service in the estate (micro-org #142). A check that could not fail read as the
  * absence of a problem, and it was live on 44 containers across both networks.
@@ -79,7 +57,7 @@ function requiredSecret(source: Source, name: string, minLength = 24): string {
  * keystrokes, and a measured Shannon entropy floor. It has no NODE_ENV exemption and no escape
  * hatch, so CI generates a real value per run rather than being let through.
  *
- * `required` rather than `requiredSecret`, deliberately: the weaker checks are a strict subset of
+ * `required` in front of it and nothing else, deliberately: the deleted checks were a strict subset of
  * the stronger ones, and running them first would answer a 40-character placeholder with "must be
  * at least 24 characters" — a message that is true, useless, and points the operator at the wrong
  * property.
