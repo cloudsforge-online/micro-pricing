@@ -3,7 +3,7 @@
  *
  * The staleness cases carry the most weight here. A stale quote is not a discount, it is an
  * unknown price, and the estate's oracle is one `if` away from serving one — the same rule exists
- * at `repos/forge-pay/services/pay/src/pricing.ts:359`, and it is right, but it protects a value
+ * at `repos/forge-pay/services/pay/src/pricing.ts`, and it is right, but it protects a value
  * that only one replica has. Here the rule protects a value the whole estate shares.
  */
 

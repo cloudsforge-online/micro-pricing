@@ -4,7 +4,7 @@
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  * THIS IS THE FILE THAT MAKES WIDENING THE ASSET SET SAFE, AND IT IS WORTH SAYING WHY.
  *
- * `MARKET_ASSETS` is not a list in this repository. `rates.ts:57` derives it from `ON_CHAIN_ASSETS`
+ * `MARKET_ASSETS` is not a list in this repository. `rates.ts` derives it from `ON_CHAIN_ASSETS`
  * in `@cloudsforge/contracts-chain`, which lives in another repository and is compiled into 27+
  * services. So an edit over there widens the loops in `sources.ts` here, in a deploy that need not
  * mention pricing at all.
@@ -12,7 +12,7 @@
  * Before this file, that edit would have taken the oracle down for every asset. `sources.ts` asked
  * Coinbase for `https://api.coinbase.com/v2/prices/<CODE>-USD/spot` built from the asset code
  * itself; `httpFetchJson` throws on any non-200; `Promise.all` rejects on the first rejection. A
- * single unlisted symbol therefore turned into "coinbase answered nothing", and `oracle.ts:65`
+ * single unlisted symbol therefore turned into "coinbase answered nothing", and `oracle.ts`
  * counts a source's whole promise, so BTC, ETH, SOL and XRP each lost a vote too. With
  * `PRICING_MIN_SOURCES` at its default that is not a degradation, it is a rejected round.
  *

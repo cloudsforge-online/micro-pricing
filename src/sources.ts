@@ -1,7 +1,7 @@
 /**
  * The four price sources.
  *
- * Carried forward from `repos/forge-pay/services/pay/src/pricing.ts:89` — the endpoints, the
+ * Carried forward from `repos/forge-pay/services/pay/src/pricing.ts` — the endpoints, the
  * Kraken legacy-asset-name mapping and the note about Binance quoting in USDT are all its work and
  * all correct. Three things change:
  *
@@ -81,13 +81,13 @@ export function httpFetchJson(timeoutMs: number): FetchJson {
  * lookup maps. That arrangement had a failure mode that is worth naming, because it very nearly
  * happened here and it takes the whole oracle down rather than one asset:
  *
- *   `MARKET_ASSETS` is DERIVED — `rates.ts:57` filters `ON_CHAIN_ASSETS` — so adding an asset to
+ *   `MARKET_ASSETS` is DERIVED — `rates.ts` filters `ON_CHAIN_ASSETS` — so adding an asset to
  *   the chain contract in another repository silently widened the loops below WITHOUT widening the
  *   URLs. CoinGecko, Kraken and Binance would then have quoted four assets out of five and the
  *   fifth would simply be absent, which is survivable. **Coinbase would not.** It builds one URL
  *   per member from the asset code itself, `Promise.all` rejects on the first rejection, and
  *   `httpFetchJson` throws on any non-200 — so a single unlisted symbol turns a 404 into a source
- *   that answered nothing, and `oracle.ts:65` then counts coinbase out for BTC, ETH, SOL and XRP
+ *   that answered nothing, and `oracle.ts` then counts coinbase out for BTC, ETH, SOL and XRP
  *   as well. One new asset, four assets' quotes gone, on a live estate.
  *
  * So no venue is ever asked for a symbol it has not been told this venue publishes. An asset with

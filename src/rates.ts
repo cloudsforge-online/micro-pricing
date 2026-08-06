@@ -7,7 +7,7 @@
  * ---------------------------------------------------------------------------------------------
  * The defect being fixed.
  *
- * `repos/forge-pay/services/pay/src/pricing.ts:64` converts every source quote with
+ * `repos/forge-pay/services/pay/src/pricing.ts` converts every source quote with
  *
  *     BigInt(Math.floor(usd * Number(RATE_SCALE)))
  *
@@ -21,7 +21,7 @@
  * `512345n` and a source that quotes `"64231.5"` produces exactly `64231500000n`.
  *
  * The same file also renders rates back to the client with `Number(scaled) / Number(RATE_SCALE)`
- * (`pricing.ts:453`), which round-trips the rate through a double on the way out. `formatScaled`
+ * (`pricing.ts`), which round-trips the rate through a double on the way out. `formatScaled`
  * replaces that: decimal values are strings end to end.
  * ---------------------------------------------------------------------------------------------
  */
@@ -119,7 +119,7 @@ export function parseAdministeredScaled(text: string): bigint | null {
 /**
  * Exact decimal rendering of a fixed-point integer. No float round-trip, in either direction.
  *
- * Carried forward verbatim in behaviour from `pricing.ts:69`, which is the one part of the old
+ * Carried forward verbatim in behaviour from `pricing.ts`, which is the one part of the old
  * oracle's formatting that was already right.
  */
 export function formatScaled(scaled: bigint): string {

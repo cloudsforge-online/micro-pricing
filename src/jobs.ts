@@ -5,7 +5,7 @@
  * `setInterval` in this repository doing domain work, and adding one fails review.
  *
  * **This service is the clearest case for that rule in the estate.** The oracle it replaces runs
- * `setInterval(tick, env.oracleRefreshSeconds * 1000)` at `pricing.ts:479`, guarded by nothing at
+ * `setInterval(tick, env.oracleRefreshSeconds * 1000)` at `pricing.ts`, guarded by nothing at
  * all. With three replicas that is three refresh rounds a minute against four exchanges — three
  * times the rate-limit consumption, and three different medians written to three different Maps,
  * so which rate a user is quoted depends on which replica the balancer picked.

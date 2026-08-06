@@ -2,8 +2,8 @@
  * The quote store, and the rate a caller may settle against.
  *
  * **This file is the fix.** The estate's oracle keeps its quotes in a module-level
- * `Map<DepositCoin, Quote>` (`repos/forge-pay/services/pay/src/pricing.ts:60`) and its
- * administered prices in a second one (`:253`). Both are per-process, so two replicas quote two
+ * `Map<DepositCoin, Quote>` (`repos/forge-pay/services/pay/src/pricing.ts`) and its
+ * administered prices in a second one. Both are per-process, so two replicas quote two
  * different rates, an admin price update lands on exactly one of them, and a restart empties both.
  * A table makes the quote set one thing that the whole estate reads, and makes an administered
  * change atomic and estate-wide.
@@ -245,7 +245,7 @@ export interface SetAdministered {
  * Set an administered price, and the quote it produces, in one transaction.
  *
  * The two writes are together because they are one fact. The estate's version updates a row and
- * then a per-process cache (`pricing.ts:329`), which means the replica that served the request has
+ * then a per-process cache (`pricing.ts`), which means the replica that served the request has
  * the new price and every other replica keeps serving the old one until it happens to restart.
  * Here there is no cache to fall out of step: the next `GET /rates` on any replica reads the row.
  */

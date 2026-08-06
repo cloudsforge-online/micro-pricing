@@ -3,8 +3,8 @@
  *
  * This is a test about text rather than behaviour, deliberately. The defect it guards against is
  * not one wrong answer that a unit test could pin down — it is a habit. `Math.floor(usd * 1e6)`
- * at `repos/forge-pay/services/pay/src/pricing.ts:64` and `Number(scaled) / Number(RATE_SCALE)`
- * at `:453` are both individually plausible-looking lines that quietly put the estate's exchange
+ * at `repos/forge-pay/services/pay/src/pricing.ts` and `Number(scaled) / Number(RATE_SCALE)`
+ * are both individually plausible-looking lines that quietly put the estate's exchange
  * rates through a double. A behavioural test only catches them on the inputs it happens to try;
  * the scan catches them the moment they are written.
  *

@@ -1,7 +1,7 @@
 /**
  * One refresh round.
  *
- * The shape is carried forward from `repos/forge-pay/services/pay/src/pricing.ts:190`, which gets
+ * The shape is carried forward from `repos/forge-pay/services/pay/src/pricing.ts`, which gets
  * the important things right: settle every source independently, require a minimum count, reject
  * the round on divergence, take the median. What changes:
  *
@@ -11,7 +11,7 @@
  *      operator needs when three of four are down.
  *   2. **The result lands in a table, not a Map.** See `quotes.ts`.
  *   3. **A round runs once for the estate**, under the `price.refresh` / `global` lease, rather
- *      than once per replica on a `setInterval` (`pricing.ts:479`). N replicas on a timer is N
+ *      than once per replica on a `setInterval` (`pricing.ts`). N replicas on a timer is N
  *      times the exchange rate-limit consumption and N different answers.
  *   4. **Never a float.** Sources yield decimal strings and `parseScaled` reads their digits.
  */
