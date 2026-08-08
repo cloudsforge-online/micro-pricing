@@ -101,13 +101,57 @@ export function httpFetchJson(timeoutMs: number): FetchJson {
  * matters. What changed is that a missing symbol can no longer manufacture that failure.
  * ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 
-/** CoinGecko's own coin ids. Verified against `/api/v3/simple/price` on 2026-08-05. */
+/* ── DOGE AND ETC ARE WIRED HERE BEFORE THEY EXIST AS ASSET CODES, AND THAT IS THE ORDERING ────
+ *
+ * `contracts/packages/chain/src/index.ts`, above `ON_CHAIN_ASSETS`, states the rule this file is
+ * the other half of: "wire the follower, the addresses and the sweep; add the price source and
+ * prove it against the live venues; THEN add the member". LTC is the worked example. So the five
+ * maps below carry `DOGE` and `ETC` while `AssetCode` still has neither, and every entry is inert
+ * until the chain contract widens — `quoted()` intersects with `MARKET_ASSETS`, which is derived
+ * from `ON_CHAIN_ASSETS`, so a symbol for an asset the estate cannot yet name is never requested.
+ *
+ * **The keys typecheck today and the lookups do not, and the difference is worth knowing before
+ * anyone tries to "fix" the cast in `sources.test.ts`.** The maps are `Partial<Record<AssetCode,
+ * …>>`, so `COINGECKO_IDS['DOGE']` is a TS7053 against a union that does not contain `DOGE`.
+ * Writing `DOGE:` INSIDE the literal is accepted only because the literal is passed to
+ * `Object.freeze` first, which loses its freshness and with it the excess-property check. That is
+ * a quirk being relied on deliberately for one release, not a claim that the union is irrelevant:
+ * the moment micro-contracts merges, both halves are ordinary.
+ *
+ * MEASURED AGAINST THE LIVE VENUES ON 2026-08-08, verbatim, because the Kraken half was a trap:
+ *
+ *   $ curl -s 'https://api.coingecko.com/api/v3/simple/price?ids=dogecoin,ethereum-classic&vs_currencies=usd'
+ *   {"dogecoin":{"usd":0.070958},"ethereum-classic":{"usd":6.53}}
+ *
+ *   $ curl -s 'https://api.coinbase.com/v2/prices/DOGE-USD/spot'
+ *   {"data":{"amount":"0.07096","base":"DOGE","currency":"USD"}}
+ *   $ curl -s 'https://api.coinbase.com/v2/prices/ETC-USD/spot'
+ *   {"data":{"amount":"6.53","base":"ETC","currency":"USD"}}
+ *
+ *   $ curl -s 'https://api.binance.com/api/v3/ticker/price?symbol=DOGEUSDT'
+ *   {"symbol":"DOGEUSDT","price":"0.07101000"}
+ *   $ curl -s 'https://api.binance.com/api/v3/ticker/price?symbol=ETCUSDT'
+ *   {"symbol":"ETCUSDT","price":"6.53000000"}
+ *
+ * All four venues list both assets, so nothing here has to handle a partial listing. The Kraken
+ * measurements are on `KRAKEN_KEYS` below, where the surprise is.
+ * ──────────────────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * CoinGecko's own coin ids. Verified against `/api/v3/simple/price` on 2026-08-05, and again for
+ * `dogecoin` and `ethereum-classic` on 2026-08-08.
+ *
+ * `ethereum-classic` and not `etc`: CoinGecko ids are slugs, not tickers, and `etc` is a different
+ * coin entirely. This is the same class of mistake as building a Coinbase URL out of an asset code.
+ */
 export const COINGECKO_IDS: Readonly<Partial<Record<AssetCode, string>>> = Object.freeze({
   BTC: 'bitcoin',
   ETH: 'ethereum',
   SOL: 'solana',
   XRP: 'ripple',
   LTC: 'litecoin',
+  DOGE: 'dogecoin',
+  ETC: 'ethereum-classic',
 })
 
 /** Coinbase spot products, `<base>-USD`. The base is not always the asset code, so it is stated. */
@@ -117,11 +161,19 @@ export const COINBASE_PRODUCTS: Readonly<Partial<Record<AssetCode, string>>> = O
   SOL: 'SOL-USD',
   XRP: 'XRP-USD',
   LTC: 'LTC-USD',
+  DOGE: 'DOGE-USD',
+  ETC: 'ETC-USD',
 })
 
 /**
  * The pair Kraken is ASKED for. Distinct from `KRAKEN_KEYS` below, which is what it answers under —
  * Bitcoin is the standing proof that the two differ (`XBTUSD` in, `XXBTZUSD` out).
+ *
+ * **DOGE IS `XDGUSD` AND NOT `DOGEUSD`.** Kraken's name for Dogecoin is `XDG`, and that is not a
+ * legacy X-prefix the way `XXBT` is — it is the ticker. `DOGEUSD` is accepted as a request alias
+ * and answers under `XDGUSD` anyway (measured below), so asking by the alias would work and would
+ * also leave the response key looking like something that could be derived from the asset code.
+ * Asking by the name Kraken actually uses keeps the request and the answer legible together.
  */
 export const KRAKEN_PAIRS: Readonly<Partial<Record<AssetCode, string>>> = Object.freeze({
   BTC: 'XBTUSD',
@@ -129,6 +181,8 @@ export const KRAKEN_PAIRS: Readonly<Partial<Record<AssetCode, string>>> = Object
   SOL: 'SOLUSD',
   XRP: 'XRPUSD',
   LTC: 'LTCUSD',
+  DOGE: 'XDGUSD',
+  ETC: 'ETCUSD',
 })
 
 /**
@@ -139,6 +193,32 @@ export const KRAKEN_PAIRS: Readonly<Partial<Record<AssetCode, string>>> = Object
  * `LTCUSD` it was asked for — confirmed against the live endpoint on 2026-08-05, not assumed from
  * the pattern. `LTCUSD` is kept as a fallback for the same reason the others carry one: Kraken has
  * been migrating off the X/Z prefixes for years and the day it finishes must not be an outage.
+ *
+ * ── DOGE AND ETC, MEASURED ON 2026-08-08, AND THEY FALL ON OPPOSITE SIDES OF THE PATTERN ───────
+ *
+ * ETC is the boring one and behaves exactly like LTC — asked as `ETCUSD`, answers as `XETCZUSD`:
+ *
+ *   $ curl -s 'https://api.kraken.com/0/public/Ticker?pair=ETCUSD'
+ *   {"error":[],"result":{"XETCZUSD":{"a":["6.52800000","2","2.000"],…,"c":["6.52800000","5.96443300"],…}}}
+ *
+ * DOGE IS NOT, AND GUESSING IT FROM ETC'S SHAPE WOULD HAVE PRODUCED A KEY THAT DOES NOT EXIST.
+ * Kraken answers under `XDGUSD` — one X, no `Z`, and NOT `XXDGZUSD`, which is a hard error:
+ *
+ *   $ curl -s 'https://api.kraken.com/0/public/Ticker?pair=XDGUSD'
+ *   {"error":[],"result":{"XDGUSD":{"a":["0.070960700",…],…,"c":["0.070960600","14148.69660064"],…}}}
+ *   $ curl -s 'https://api.kraken.com/0/public/Ticker?pair=DOGEUSD'
+ *   {"error":[],"result":{"XDGUSD":{…}}}                    ← the alias answers under XDGUSD too
+ *   $ curl -s 'https://api.kraken.com/0/public/Ticker?pair=XXDGZUSD'
+ *   {"error":["EQuery:Unknown asset pair"]}
+ *
+ * `/0/public/AssetPairs?pair=XDGUSD,ETCUSD` explains the asymmetry and is why the two entries below
+ * do not rhyme: DOGE's pair record is `{"altname":"XDGUSD","base":"XXDG","quote":"ZUSD"}` while
+ * ETC's is `{"altname":"ETCUSD","base":"XETC","quote":"ZUSD"}`. Both bases carry the legacy `X`,
+ * but the CANONICAL PAIR NAME — which is what the ticker keys its result by — kept the prefixed
+ * form only for ETC. The response key is a fact about each pair, never a rule about the venue.
+ *
+ * `DOGEUSD` is DOGE's fallback rather than a second legacy spelling: it is the name Kraken would
+ * land on if it ever finishes the migration, and it already resolves as a request today.
  */
 export const KRAKEN_KEYS: Readonly<Partial<Record<AssetCode, readonly string[]>>> = Object.freeze({
   BTC: ['XXBTZUSD', 'XBTUSD'],
@@ -146,6 +226,8 @@ export const KRAKEN_KEYS: Readonly<Partial<Record<AssetCode, readonly string[]>>
   SOL: ['SOLUSD'],
   XRP: ['XXRPZUSD', 'XRPUSD'],
   LTC: ['XLTCZUSD', 'LTCUSD'],
+  DOGE: ['XDGUSD', 'DOGEUSD'],
+  ETC: ['XETCZUSD', 'ETCUSD'],
 })
 
 /** Binance symbols. Quoted in USDT, not USD — see the note on the source itself. */
@@ -155,6 +237,8 @@ export const BINANCE_SYMBOLS: Readonly<Partial<Record<AssetCode, string>>> = Obj
   SOL: 'SOLUSDT',
   XRP: 'XRPUSDT',
   LTC: 'LTCUSDT',
+  DOGE: 'DOGEUSDT',
+  ETC: 'ETCUSDT',
 })
 
 /**
