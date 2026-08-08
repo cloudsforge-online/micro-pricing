@@ -82,6 +82,49 @@ test('LITECOIN IS QUOTABLE BEFORE IT IS LISTED, which is the whole ordering of t
   assert.deepEqual([...(KRAKEN_KEYS['LTC'] ?? [])], ['XLTCZUSD', 'LTCUSD'])
 })
 
+/**
+ * The maps, seen as plain string keys.
+ *
+ * `DOGE` AND `ETC` ARE NOT MEMBERS OF `AssetCode` YET — that is the entire point of the release
+ * this test belongs to — so `COINGECKO_IDS['DOGE']` is a TS7053 and not a mistake. The cast is
+ * therefore the assertion's subject rather than a convenience: it says "there is an entry under a
+ * key the type system cannot yet name", which is exactly the state the chain contract's ordering
+ * rule requires the price layer to pass through. **Delete these casts when micro-contracts widens
+ * `AssetCode`; do not delete the assertions.**
+ */
+const byName = (map: object): Readonly<Record<string, unknown>> =>
+  map as Readonly<Record<string, unknown>>
+
+test('DOGE AND ETC ARE QUOTABLE BEFORE THEY ARE NAMEABLE — the same ordering, one asset set later', () => {
+  // `contracts/packages/chain/src/index.ts` above `ON_CHAIN_ASSETS`: "add the price source and
+  // prove it against the live venues; then add the member here". These five assertions are what
+  // "prove" means, and they are inert against the running estate — `quoted()` intersects with
+  // `MARKET_ASSETS`, so neither code is requested from any venue until the contract widens.
+  //
+  // Every symbol below was measured against the live endpoint on 2026-08-08, with the verbatim
+  // responses recorded on the maps in `sources.ts`. None of them was inferred from another asset's
+  // shape, because that is the mistake the Kraken entries exist to demonstrate.
+  for (const [asset, expected] of [
+    ['DOGE', { gecko: 'dogecoin', coinbase: 'DOGE-USD', pair: 'XDGUSD', binance: 'DOGEUSDT' }],
+    ['ETC', { gecko: 'ethereum-classic', coinbase: 'ETC-USD', pair: 'ETCUSD', binance: 'ETCUSDT' }],
+  ] as const) {
+    assert.equal(byName(COINGECKO_IDS)[asset], expected.gecko, `${asset} CoinGecko id`)
+    assert.equal(byName(COINBASE_PRODUCTS)[asset], expected.coinbase, `${asset} Coinbase product`)
+    assert.equal(byName(KRAKEN_PAIRS)[asset], expected.pair, `${asset} Kraken pair`)
+    assert.equal(byName(BINANCE_SYMBOLS)[asset], expected.binance, `${asset} Binance symbol`)
+  }
+
+  // KRAKEN IS THE ONE THAT HAD TO BE MEASURED TWICE, and these two lines are why the measurement
+  // is not optional. ETC follows LTC's legacy pattern — asked `ETCUSD`, answers `XETCZUSD`. DOGE
+  // does not follow it at all: Kraken's ticker for Dogecoin is `XDG`, the canonical pair is
+  // `XDGUSD`, and `XXDGZUSD` — the key a reader who had just written ETC's entry would type — is
+  // `EQuery:Unknown asset pair`. A guessed key here is not a compile error and not a 404; it is a
+  // source that silently answers nothing for one asset, for ever.
+  assert.deepEqual(byName(KRAKEN_KEYS)['DOGE'], ['XDGUSD', 'DOGEUSD'])
+  assert.deepEqual(byName(KRAKEN_KEYS)['ETC'], ['XETCZUSD', 'ETCUSD'])
+  assert.notDeepEqual(byName(KRAKEN_KEYS)['DOGE'], ['XXDGZUSD', 'DOGEUSD'])
+})
+
 /* ─────────────────────────────── the URLs, now derived ─────────────────────────────── */
 
 test('a URL carries exactly the assets it was given, in order, and nothing it was not', () => {
@@ -127,13 +170,31 @@ test("Binance's JSON-array query survives a round trip, rather than being hand-e
 
 /* ─────────────────────── the sources, over an injected transport ─────────────────────── */
 
-/** Every venue's happy answer for whatever `MARKET_ASSETS` currently holds, at a known price. */
+/**
+ * Every venue's happy answer for whatever `MARKET_ASSETS` currently holds, at a known price.
+ *
+ * **DOGE AND ETC ARE HERE AHEAD OF `MARKET_ASSETS`, AND WITHOUT THEM THIS SUITE WOULD GO RED THE
+ * MOMENT MICRO-CONTRACTS MERGES.** That is not hypothetical and it is the second half of what
+ * "make the pricing change safe to merge on its own" has to mean. `every source quotes EVERY
+ * market asset` below ends with `assert.deepEqual(Object.keys(quotes).sort(), MARKET_ASSETS)`, and
+ * `MARKET_ASSETS` is derived from `ON_CHAIN_ASSETS` in another repository. An asset that widens
+ * that list while absent from this fixture reads as `undefined` here, `decimalFrom` refuses it,
+ * `collect` leaves it out, and the key comparison fails — a red suite in micro-pricing caused
+ * entirely by a merge in micro-contracts, which is precisely the cross-repo surprise the maps in
+ * `sources.ts` were built to stop. The fixture has to widen with them, in the same PR.
+ *
+ * The two new numbers are the live mid-prices measured on 2026-08-08 (recorded verbatim on the
+ * maps in `sources.ts`) rather than invented ones, and both round-trip exactly through the double
+ * that the CoinGecko fake puts them through.
+ */
 const PRICE: Readonly<Record<string, string>> = Object.freeze({
   BTC: '63969.01',
   ETH: '1865.42',
   SOL: '73.53',
   XRP: '1.071',
   LTC: '44.95',
+  DOGE: '0.07096',
+  ETC: '6.53',
 })
 
 function fakeVenues(overrides: { readonly reject?: (url: string) => boolean } = {}): FetchJson {
