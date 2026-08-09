@@ -86,7 +86,7 @@ this replaces, which got them right (`src/sources.ts`).
 
 | Source | Shape | Note |
 | --- | --- | --- |
-| CoinGecko | one request for all four assets | the **only** source that quotes as a JSON number, so its value has already been through a double before this code sees it. A reason to prefer the other three, not to drop it: it is one of four inputs to a median (`src/sources.ts`) |
+| CoinGecko | one request for every market asset | the **only** source that quotes as a JSON number, so its value has already been through a double before this code sees it. A reason to prefer the other three, not to drop it: it is one of four inputs to a median (`src/sources.ts`) |
 | Coinbase | one request per asset, in parallel | any one failing rejects the whole source, which is correct — a partial answer from one venue is still one opinion, and the minimum-source rule decides whether losing it matters (`src/sources.ts`) |
 | Kraken | one request, legacy keys | answers under `XXBTZUSD`/`XBTUSD` rather than the pair asked for (`src/sources.ts`) |
 | Binance | one request | **quoted in USDT, not USD**. A depeg shows up as divergence against the other three and takes the round out rather than skewing the median — which is the behaviour wanted, and the reason divergence is a rejection rather than an outlier trim (`src/sources.ts`) |

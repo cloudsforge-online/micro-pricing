@@ -243,6 +243,13 @@ test('the market and administered sets are disjoint, and derived from the chain 
   // by a market or set by an operator, and none is both or neither. An asset that fell out of both
   // sets would have no price at all, and `quoteFor` would fail closed on it for ever without
   // anything naming why.
+  //
+  // BE HONEST ABOUT WHAT THE NEXT TWO LINES CAN CATCH. The first restates `rates.ts`'s own filter,
+  // so it cannot fail while that filter is the implementation; it is a pin on the DEFINITION —
+  // it goes red if somebody replaces the derivation with a literal that disagrees, which is exactly
+  // the regression this file's history is about. The line after it is the one with independent
+  // content: `QUOTED_ASSETS` is assembled by concatenation, so "the two halves put back together
+  // are the whole" is a real claim about it.
   assert.deepEqual(
     [...MARKET_ASSETS].sort(),
     [...ON_CHAIN_ASSETS].filter((asset) => !ADMINISTERED_ASSETS.includes(asset)).sort(),
@@ -250,9 +257,18 @@ test('the market and administered sets are disjoint, and derived from the chain 
   assert.deepEqual([...QUOTED_ASSETS].sort(), [...ON_CHAIN_ASSETS].sort())
   assert.equal(QUOTED_ASSETS.length, MARKET_ASSETS.length + ADMINISTERED_ASSETS.length)
 
-  // Non-vacuous, and specific enough to catch a partition that has silently emptied: the two
-  // assets whose presence this repository's behaviour is actually built around.
-  assert.ok(MARKET_ASSETS.includes('BTC'))
-  assert.ok(MARKET_ASSETS.includes('LTC'))
-  assert.ok(MARKET_ASSETS.length >= 5)
+  // Non-vacuous, and specific enough to catch a partition that has silently emptied. Named because
+  // this repository's behaviour is built around them: BTC and LTC are the worked examples in
+  // `sources.ts`, and DOGE and ETC are the two whose Kraken symbols had to be measured rather than
+  // inferred. An asset losing its market membership is a rate this service stops serving.
+  for (const asset of ['BTC', 'LTC', 'DOGE', 'ETC'] as const) {
+    assert.ok(MARKET_ASSETS.includes(asset), `${asset} is no longer a market asset`)
+  }
+
+  // NO COUNT IS ASSERTED. A floor like `MARKET_ASSETS.length >= 5` was here and had gone stale at
+  // seven without failing — it can only ever be too low, so it stops testing anything the day after
+  // it is written, and raising it is a second hand-maintained list of how many assets exist. The
+  // non-vacuity that matters is that neither half of the partition is empty, which does not stale.
+  assert.ok(MARKET_ASSETS.length > 0, 'a partition with an empty market half is not a partition')
+  assert.ok(ADMINISTERED_ASSETS.length > 0)
 })
