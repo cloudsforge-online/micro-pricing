@@ -16,7 +16,7 @@ import { Lifecycle } from '@cloudsforge/lifecycle'
 import { Logger, Metrics, registerHttpMetrics, registerJobMetrics } from '@cloudsforge/telemetry'
 import { createServer, registerServiceMetrics, type PrincipalVerifier } from './server.ts'
 import { recordAccepted, recordFailure } from './quotes.ts'
-import { QUOTED_ASSETS, parseScaled } from './rates.ts'
+import { QUOTED_ASSETS, isQuotedAsset, parseScaled } from './rates.ts'
 import { enabled, migrateTestDb, openDb, resetPricing, skip } from './testsupport.ts'
 import type { Db } from './outbox.ts'
 
@@ -195,10 +195,33 @@ test('an unusable rate answers 200 with the reason, not a 404 or a stale number'
   assert.equal(rate['reason'], 'sources diverged by 900 bps')
 })
 
+/**
+ * The last hand-typed asset code in this file, and the last one that could go stale.
+ *
+ * This test read `/rates/DOGE` and expected a 404. It went red on 2026-08-09 with nothing in this
+ * repository changed: micro-contracts merged the second half of the DOGE/ETC release, so
+ * `ON_CHAIN_ASSETS` is 8 assets rather than 6, `MARKET_ASSETS` derives from it, and `/rates/DOGE`
+ * now correctly answers 200 with `usable: false, reason: "no quote yet"`. That is the behaviour
+ * the test above this one pins on purpose — a 404 would be a lie about the asset existing — so
+ * the service was right and the fixture was wrong.
+ *
+ * A live ticker is never a safe stand-in for "unknown" in a service whose asset list is designed
+ * to grow. `NOTACOIN` is not a ticker at any of the four venues and is not a shape
+ * `contracts-chain` would ever mint, and the guard below says so at run time rather than trusting
+ * it: if the estate ever does list it, this fails with the reason instead of failing as a 404 that
+ * quietly stopped testing anything.
+ */
+const UNQUOTED_ASSET = 'NOTACOIN'
+
 test('a lower-case asset works; an unknown one is a 404', { skip }, async () => {
   await quoteBtc()
   assert.equal((await call('GET', '/rates/btc')).status, 200)
-  assert.equal((await call('GET', '/rates/DOGE')).status, 404)
+
+  assert.ok(
+    !isQuotedAsset(UNQUOTED_ASSET),
+    `${UNQUOTED_ASSET} is now a quoted asset — this test needs a code the estate does not list`,
+  )
+  assert.equal((await call('GET', `/rates/${UNQUOTED_ASSET}`)).status, 404)
 })
 
 /* ------------------------------------------------------------------ the admin route */
