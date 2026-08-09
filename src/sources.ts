@@ -83,12 +83,12 @@ export function httpFetchJson(timeoutMs: number): FetchJson {
  *
  *   `MARKET_ASSETS` is DERIVED — `rates.ts` filters `ON_CHAIN_ASSETS` — so adding an asset to
  *   the chain contract in another repository silently widened the loops below WITHOUT widening the
- *   URLs. CoinGecko, Kraken and Binance would then have quoted four assets out of five and the
- *   fifth would simply be absent, which is survivable. **Coinbase would not.** It builds one URL
+ *   URLs. CoinGecko, Kraken and Binance would then have quoted every asset but the new one, and
+ *   that one would simply be absent, which is survivable. **Coinbase would not.** It builds one URL
  *   per member from the asset code itself, `Promise.all` rejects on the first rejection, and
  *   `httpFetchJson` throws on any non-200 — so a single unlisted symbol turns a 404 into a source
- *   that answered nothing, and `oracle.ts` then counts coinbase out for BTC, ETH, SOL and XRP
- *   as well. One new asset, four assets' quotes gone, on a live estate.
+ *   that answered nothing, and `oracle.ts` then counts coinbase out for EVERY OTHER MARKET ASSET
+ *   too. One new asset, the whole venue's quotes gone, on a live estate.
  *
  * So no venue is ever asked for a symbol it has not been told this venue publishes. An asset with
  * no entry here is simply not requested, and is therefore absent from that source's answer — the
@@ -101,22 +101,37 @@ export function httpFetchJson(timeoutMs: number): FetchJson {
  * matters. What changed is that a missing symbol can no longer manufacture that failure.
  * ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 
-/* ── DOGE AND ETC ARE WIRED HERE BEFORE THEY EXIST AS ASSET CODES, AND THAT IS THE ORDERING ────
+/* ── DOGE AND ETC WERE WIRED HERE BEFORE THEY EXISTED AS ASSET CODES, AND THAT IS THE ORDERING ──
  *
  * `contracts/packages/chain/src/index.ts`, above `ON_CHAIN_ASSETS`, states the rule this file is
  * the other half of: "wire the follower, the addresses and the sweep; add the price source and
- * prove it against the live venues; THEN add the member". LTC is the worked example. So the five
- * maps below carry `DOGE` and `ETC` while `AssetCode` still has neither, and every entry is inert
- * until the chain contract widens — `quoted()` intersects with `MARKET_ASSETS`, which is derived
- * from `ON_CHAIN_ASSETS`, so a symbol for an asset the estate cannot yet name is never requested.
+ * prove it against the live venues; THEN add the member". LTC is the worked example, and DOGE and
+ * ETC followed it: the five maps below carried both symbols for a release while `AssetCode` had
+ * neither, inert because `quoted()` intersects with `MARKET_ASSETS`, so a symbol for an asset the
+ * estate could not yet name was never requested.
  *
- * **The keys typecheck today and the lookups do not, and the difference is worth knowing before
- * anyone tries to "fix" the cast in `sources.test.ts`.** The maps are `Partial<Record<AssetCode,
- * …>>`, so `COINGECKO_IDS['DOGE']` is a TS7053 against a union that does not contain `DOGE`.
- * Writing `DOGE:` INSIDE the literal is accepted only because the literal is passed to
- * `Object.freeze` first, which loses its freshness and with it the excess-property check. That is
- * a quirk being relied on deliberately for one release, not a claim that the union is irrelevant:
- * the moment micro-contracts merges, both halves are ordinary.
+ * **That half is now DONE and the entries below are ordinary.** Read on 2026-08-09, `AssetCode` in
+ * `@cloudsforge/contracts-chain` names both, so `MARKET_ASSETS` carries them and every map here is
+ * checked against the union the ordinary way. No count is written down, here or anywhere else in
+ * this file: the set is derived in another repository and a number in this prose would be stale the
+ * day it widens. The state described above is history, kept because the next asset goes through it:
+ * symbols first, membership second.
+ *
+ * What that history cost while it lasted is worth one line, because it reads as a puzzle otherwise.
+ * `COINGECKO_IDS['DOGE']` did not compile against a union without `DOGE`, while writing `DOGE:`
+ * inside the literal was accepted — the literal is passed to `Object.freeze` and loses its
+ * freshness, and with it the excess-property check. So the keys typechecked and the lookups did
+ * not, and `sources.test.ts` had to cast around the lookup half for exactly one release. Those
+ * casts are gone, and a misspelt asset code in that file is a compile error again.
+ *
+ * **A PRICE IS NOT A CHAIN. Nothing in this service reaches a chain node — no RPC URL, no
+ * `bitcoind`, no `geth`, nothing that could tell you whether an asset is followable.** A quote here
+ * is four exchanges' opinion of a ticker, and it is exactly as available for an asset whose node is
+ * switched off as for one at the chain tip. That is worth stating because the estate does not
+ * currently follow both of these: on 2026-08-09 the Dogecoin node is still in initial block
+ * download and no Ethereum Classic node runs at all, so DOGE and ETC being quotable is a statement
+ * about CoinGecko, Coinbase, Kraken and Binance and about nothing else. Deposits, confirmations
+ * and sweeps are settlement's and custody's question, answered from their own configuration.
  *
  * MEASURED AGAINST THE LIVE VENUES ON 2026-08-08, verbatim, because the Kraken half was a trap:
  *

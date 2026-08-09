@@ -13,7 +13,7 @@
  * Coinbase for `https://api.coinbase.com/v2/prices/<CODE>-USD/spot` built from the asset code
  * itself; `httpFetchJson` throws on any non-200; `Promise.all` rejects on the first rejection. A
  * single unlisted symbol therefore turned into "coinbase answered nothing", and `oracle.ts`
- * counts a source's whole promise, so BTC, ETH, SOL and XRP each lost a vote too. With
+ * counts a source's whole promise, so every OTHER market asset lost a vote too. With
  * `PRICING_MIN_SOURCES` at its default that is not a degradation, it is a rejected round.
  *
  * Two things now stand between that edit and an outage, and the first is the one that matters:
@@ -24,10 +24,13 @@
  *   2. **`every market asset is quotable by every source` below goes red** the moment the chain
  *      contract widens without the maps widening with it. Red on a branch, not amber at 3am.
  *
- * No test here touches a live exchange; the transport is injected. The five symbols were checked
- * against the live endpoints once, by hand, on 2026-08-05, and that check is recorded in the
- * comments on the maps rather than run in CI — a suite that hits four exchanges is a suite that
- * fails for reasons that have nothing to do with the code.
+ * No test here touches a live exchange; the transport is injected. Each symbol was checked against
+ * the live endpoints once, by hand — the first five on 2026-08-05, DOGE and ETC on 2026-08-08 —
+ * and those checks are recorded verbatim in the comments on the maps rather than run in CI: a
+ * suite that hits four exchanges is a suite that fails for reasons that have nothing to do with the
+ * code. THE COUNT IS DELIBERATELY NOT WRITTEN DOWN HERE. `MARKET_ASSETS` is derived in another
+ * repository, so a number in this prose is stale the day it widens, and the guard immediately
+ * below is what actually holds the maps to it.
  * ══════════════════════════════════════════════════════════════════════════════════════════════
  */
 
@@ -69,7 +72,7 @@ test('THE ORDERING GUARD: every market asset has a symbol at every one of the fo
   assert.ok(MARKET_ASSETS.length > 0, 'a vacuous guard is not a guard')
 })
 
-test('LITECOIN IS QUOTABLE BEFORE IT IS LISTED, which is the whole ordering of this release', () => {
+test('LITECOIN WAS QUOTABLE BEFORE IT WAS LISTED, which is the ordering every asset follows', () => {
   // Wired ahead of `ON_CHAIN_ASSETS`, deliberately: a missing quote is recoverable and a rejected
   // source is an outage, so the source comes first and the listing second. These four assertions
   // are what "first" means, and they were red until the maps in `sources.ts` were widened.
@@ -82,24 +85,21 @@ test('LITECOIN IS QUOTABLE BEFORE IT IS LISTED, which is the whole ordering of t
   assert.deepEqual([...(KRAKEN_KEYS['LTC'] ?? [])], ['XLTCZUSD', 'LTCUSD'])
 })
 
-/**
- * The maps, seen as plain string keys.
- *
- * `DOGE` AND `ETC` ARE NOT MEMBERS OF `AssetCode` YET — that is the entire point of the release
- * this test belongs to — so `COINGECKO_IDS['DOGE']` is a TS7053 and not a mistake. The cast is
- * therefore the assertion's subject rather than a convenience: it says "there is an entry under a
- * key the type system cannot yet name", which is exactly the state the chain contract's ordering
- * rule requires the price layer to pass through. **Delete these casts when micro-contracts widens
- * `AssetCode`; do not delete the assertions.**
- */
-const byName = (map: object): Readonly<Record<string, unknown>> =>
-  map as Readonly<Record<string, unknown>>
-
-test('DOGE AND ETC ARE QUOTABLE BEFORE THEY ARE NAMEABLE — the same ordering, one asset set later', () => {
+test('DOGE AND ETC WERE QUOTABLE BEFORE THEY WERE NAMEABLE — the same ordering, one asset set later', () => {
   // `contracts/packages/chain/src/index.ts` above `ON_CHAIN_ASSETS`: "add the price source and
-  // prove it against the live venues; then add the member here". These five assertions are what
-  // "prove" means, and they are inert against the running estate — `quoted()` intersects with
-  // `MARKET_ASSETS`, so neither code is requested from any venue until the contract widens.
+  // prove it against the live venues; then add the member here". These assertions are what "prove"
+  // means. They were written while `AssetCode` named neither code and were inert against the
+  // running estate, because `quoted()` intersects with `MARKET_ASSETS`.
+  //
+  // THE CASTS THIS TEST USED TO GO THROUGH ARE GONE, which is the point of the edit that removed
+  // them. A `byName()` helper widened each map to `Record<string, unknown>` so the lookups would
+  // compile against a union that did not yet contain `DOGE`; its own doc block said to delete it
+  // the moment micro-contracts widened. Read on 2026-08-09, `AssetCode` names both, so the lookups
+  // below are ordinary indexing again — and a typo in an asset code here is now a COMPILE ERROR
+  // rather than an assertion quietly comparing `undefined` against `undefined` and passing.
+  // Checked, not assumed: misspelling one code as `DOGEE` on 2026-08-09 fails `pnpm typecheck` with
+  // TS2551, "Property 'DOGEE' does not exist on type Readonly<Partial<Record<AssetCode, string>>>".
+  // Under the cast it compiled and the test still passed, which is the failure mode being removed.
   //
   // Every symbol below was measured against the live endpoint on 2026-08-08, with the verbatim
   // responses recorded on the maps in `sources.ts`. None of them was inferred from another asset's
@@ -108,11 +108,17 @@ test('DOGE AND ETC ARE QUOTABLE BEFORE THEY ARE NAMEABLE — the same ordering, 
     ['DOGE', { gecko: 'dogecoin', coinbase: 'DOGE-USD', pair: 'XDGUSD', binance: 'DOGEUSDT' }],
     ['ETC', { gecko: 'ethereum-classic', coinbase: 'ETC-USD', pair: 'ETCUSD', binance: 'ETCUSDT' }],
   ] as const) {
-    assert.equal(byName(COINGECKO_IDS)[asset], expected.gecko, `${asset} CoinGecko id`)
-    assert.equal(byName(COINBASE_PRODUCTS)[asset], expected.coinbase, `${asset} Coinbase product`)
-    assert.equal(byName(KRAKEN_PAIRS)[asset], expected.pair, `${asset} Kraken pair`)
-    assert.equal(byName(BINANCE_SYMBOLS)[asset], expected.binance, `${asset} Binance symbol`)
+    assert.equal(COINGECKO_IDS[asset], expected.gecko, `${asset} CoinGecko id`)
+    assert.equal(COINBASE_PRODUCTS[asset], expected.coinbase, `${asset} Coinbase product`)
+    assert.equal(KRAKEN_PAIRS[asset], expected.pair, `${asset} Kraken pair`)
+    assert.equal(BINANCE_SYMBOLS[asset], expected.binance, `${asset} Binance symbol`)
   }
+
+  // And they are no longer inert: both are members of the set the oracle actually requests. If this
+  // fails, `ON_CHAIN_ASSETS` lost an asset the estate settles on — see `rates.test.ts` for the
+  // partition that owns that question.
+  assert.ok(MARKET_ASSETS.includes('DOGE'), 'DOGE is wired but not requested')
+  assert.ok(MARKET_ASSETS.includes('ETC'), 'ETC is wired but not requested')
 
   // KRAKEN IS THE ONE THAT HAD TO BE MEASURED TWICE, and these two lines are why the measurement
   // is not optional. ETC follows LTC's legacy pattern — asked `ETCUSD`, answers `XETCZUSD`. DOGE
@@ -120,9 +126,9 @@ test('DOGE AND ETC ARE QUOTABLE BEFORE THEY ARE NAMEABLE — the same ordering, 
   // `XDGUSD`, and `XXDGZUSD` — the key a reader who had just written ETC's entry would type — is
   // `EQuery:Unknown asset pair`. A guessed key here is not a compile error and not a 404; it is a
   // source that silently answers nothing for one asset, for ever.
-  assert.deepEqual(byName(KRAKEN_KEYS)['DOGE'], ['XDGUSD', 'DOGEUSD'])
-  assert.deepEqual(byName(KRAKEN_KEYS)['ETC'], ['XETCZUSD', 'ETCUSD'])
-  assert.notDeepEqual(byName(KRAKEN_KEYS)['DOGE'], ['XXDGZUSD', 'DOGEUSD'])
+  assert.deepEqual([...(KRAKEN_KEYS['DOGE'] ?? [])], ['XDGUSD', 'DOGEUSD'])
+  assert.deepEqual([...(KRAKEN_KEYS['ETC'] ?? [])], ['XETCZUSD', 'ETCUSD'])
+  assert.notDeepEqual([...(KRAKEN_KEYS['DOGE'] ?? [])], ['XXDGZUSD', 'DOGEUSD'])
 })
 
 /* ─────────────────────────────── the URLs, now derived ─────────────────────────────── */
