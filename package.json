@@ -1,6 +1,6 @@
 {
   "name": "@cloudsforge/pricing",
-  "version": "2.5.16",
+  "version": "2.5.17",
   "private": true,
   "description": "The price oracle: four independent sources, a median in BigInt fixed point, divergence rejection, fail-closed staleness, and administered prices for assets with no market. Quotes live in a table, not in a per-replica Map.",
   "license": "MIT",
