@@ -144,7 +144,9 @@ test('a failure for an asset with no quote at all is the reason the board shows'
 test('the migration seeds EMBER, and the seed is marked as nobody having decided it', { skip }, async () => {
   const prices = await readAdministered(db)
   const ember = prices.find((p) => p.asset === 'EMBER')
-  assert.equal(ember?.usdScaled, parseScaled('0.25'))
+  // 0.0001, not the 0.25 version 4 inserts: version 5 lowers the seed wherever set_by is still
+  // null, because EMBER has no exchange listing and 0.25 was never a price anything traded at.
+  assert.equal(ember?.usdScaled, parseScaled('0.0001'))
   assert.equal(ember?.setBy, null, 'a seeded default must not look like an operator decision')
 })
 

@@ -54,16 +54,22 @@ export async function migrateTestDb(sql: postgres.Sql): Promise<void> {
 }
 
 /**
- * Empty every table, then put back what the migration seeds.
+ * Empty every table, then put back what the migrations seed.
  *
  * The EMBER seed is part of the schema, not part of any one test's fixture: a suite that truncated
  * it away would be testing a database shape that no deployment ever has.
+ *
+ * **100, because that is where a migrated database ends up.** Version 4 inserts 250000 and version
+ * 5 lowers it to 100 wherever set_by is still null, which every fresh database is; restoring 250000
+ * here would hand the suite a starting state no deployment has had since version 5 shipped.
+ * `migrations.test.ts` runs version 5's real DDL against both starting rows, so the two values
+ * cannot drift apart silently.
  */
 export async function resetPricing(sql: postgres.Sql): Promise<void> {
   await sql.unsafe(`truncate ${ALL_TABLES} restart identity cascade`)
   await sql`
     insert into administered_prices (asset, usd_scaled, set_by, set_by_handle)
-    values ('EMBER', 250000, null, null)
+    values ('EMBER', 100, null, null)
     on conflict (asset) do nothing
   `
   await sql`
