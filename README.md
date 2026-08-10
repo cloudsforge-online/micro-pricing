@@ -125,9 +125,16 @@ Three refusals sit around that route:
 
 `set_by` is null while the price is still the seeded default, and that null is the point: it says
 nobody has yet taken responsibility for the number (`src/migrations.ts`,
-`src/migrations.ts`). EMBER seeds at `250000` — 0.25 USD written as an integer literal
+`src/migrations.ts`). EMBER seeds at `100` — 0.0001 USD written as an integer literal
 rather than an expression, so the seeded value cannot depend on anything Postgres computes in
 floating point.
+
+Version 4 inserts `250000`, which came from `PAY_EMBER_USD` and was never a market price; version 5
+lowers it to `100` **wherever `set_by` is still null**, so it moves seeds and never a price an
+operator chose. A released migration is immutable, which is why the correction is a second
+migration rather than an edit to the first. **EMBER has no exchange listing**, so every fiat figure
+this service produces for it is an estimate this platform set, and `source: "administered"` on the
+rate board is how a client is told which figures those are.
 
 ## Routes
 

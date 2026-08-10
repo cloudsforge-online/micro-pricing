@@ -191,6 +191,53 @@ export const MIGRATIONS: readonly Migration[] = [
       on conflict (asset) do nothing;
     `,
   },
+
+  {
+    version: 5,
+    name: 'ember_seed_is_an_estimate',
+    // The 0.25 above is inherited from PAY_EMBER_USD and it was never a market price. EMBER has no
+    // exchange listing, so no trade has ever settled against that number — and a wallet holding
+    // Hearth's block rewards renders it as a five-figure fiat total that cannot be sold anywhere.
+    // A fresh database should not be born asserting it. Version 4 cannot be edited to say so
+    // (`@cloudsforge/db` checksums it, and an edit would not move a database that already ran it),
+    // so the correction is this migration.
+    //
+    // 100 is 0.0001 x RATE_SCALE, an integer literal for exactly the reason 250000 was one: nothing
+    // about a value on the money path may depend on a number Postgres computes in floating point.
+    //
+    // GUARDED ON set_by, NOT ON THE VALUE. Version 4 leaves set_by and set_by_handle null precisely
+    // to record that nobody has taken responsibility for the seeded number, so those two nulls are
+    // the schema's own statement of "still a default". Guarding on them moves seeds and can never
+    // move a price somebody chose — including a price somebody chooses after this migration has
+    // already run somewhere else.
+    //
+    // **On mainnet this changes nothing, and that is measured rather than assumed.** The operator
+    // set EMBER through `PUT /admin/prices/:asset` on 2026-08-10 at 19:13:30Z: usd_scaled went
+    // 250000 -> 100, the rate board reported source "administered" and usable true, and the write
+    // filled set_by and set_by_handle. Both are non-null on that row, so the predicate below
+    // selects nothing there and mainnet keeps the price a person decided.
+    up: `
+      with lowered as (
+        update administered_prices
+           set usd_scaled = 100,
+               updated_at = now()
+         where asset = 'EMBER'
+           and set_by is null
+           and set_by_handle is null
+        returning asset, usd_scaled, updated_at
+      )
+      -- The quote row is what a rate lookup reads, so it moves in the same statement rather than
+      -- waiting for the refresh job's repair pass. Leaving it to that pass would open a window in
+      -- which GET /rates still served 0.25 out of a database that no longer held it.
+      update price_quotes q
+         set usd_scaled = l.usd_scaled,
+             source     = 'administered',
+             quoted_at  = l.updated_at,
+             updated_at = now()
+        from lowered l
+       where q.asset = l.asset;
+    `,
+  },
 ]
 
 /**
