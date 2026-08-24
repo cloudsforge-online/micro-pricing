@@ -33,6 +33,8 @@ import {
   type Principal,
 } from '@cloudsforge/auth'
 import type { Lifecycle } from '@cloudsforge/lifecycle'
+import { NetworkUnknownError, requestNetwork, type Network } from '@cloudsforge/http'
+import type { NetworkSql } from '@cloudsforge/db'
 import { Metrics, newRequestId, type Logger } from '@cloudsforge/telemetry'
 import type { AssetCode } from '@cloudsforge/contracts-chain'
 import {
@@ -64,7 +66,16 @@ export interface ServerDeps {
   readonly logger: Logger
   readonly metrics: Metrics
   readonly verifier: PrincipalVerifier
-  readonly sql: Db
+  /**
+   * The per-network SELECTOR, not a handle. Routes use `ctx.sql`; `NetworkSql` has no query
+   * methods, so reaching for the process-wide handle does not compile.
+   */
+  readonly sql: NetworkSql
+  /**
+   * The network to assume when no `CF-Network` arrives, or `undefined` to refuse. `CF_NETWORK_SINGLE`,
+   * for `pnpm dev`, which has no gateway in front of it. Never set in production.
+   */
+  readonly singleNetwork?: Network
   readonly rateOptions: RateOptions
   /** Refresh sampled gauges immediately before `/metrics` renders. */
   readonly beforeScrape?: () => Promise<void>
@@ -152,7 +163,32 @@ interface RequestContext {
   readonly requestId: string
   readonly log: Logger
   readonly params: Readonly<Record<string, string>>
+  /**
+   * The network THIS REQUEST belongs to, from the `CF-Network` header the gateway stamped.
+   *
+   * Not a property of the process: one pod serves both estates since the network consolidation
+   * (micro-deploy `docs/network-consolidation.md`), so "which network am I" has no answer.
+   */
+  readonly network: Network
+  /**
+   * The database handle for `network`, resolved ONCE, at the edge of the request.
+   *
+   * Every route uses this rather than reaching for the process-wide handle, because a wrong handle
+   * is not an error — it is a query that SUCCEEDS against the other estate's rows and says nothing.
+   * `deps.sql` is a `NetworkSql` with no query methods, so the mistake does not compile.
+   */
+  readonly sql: Db
 }
+
+/**
+ * Routes that answer without belonging to a network.
+ *
+ * Kubelet probes the first two and Prometheus scrapes the third; none arrives through the gateway,
+ * so none carries `CF-Network`. Refusing them makes every health probe a 500 and the pod never
+ * becomes ready. Three literal paths rather than a prefix, because this is an exemption from a data
+ * boundary; none of them queries the database.
+ */
+const OPERATIONAL_ROUTES: ReadonlySet<string> = new Set(['/livez', '/readyz', '/metrics'])
 
 interface Route {
   readonly method: string
@@ -213,23 +249,61 @@ export function createServer(deps: ServerDeps): Server {
     inFlight += 1
     deps.metrics.set('http_requests_in_flight', inFlight)
 
-    const finish = (status: number) => {
+    const finish = (status: number, metricNetwork: string) => {
       inFlight -= 1
       deps.metrics.set('http_requests_in_flight', inFlight)
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6
-      deps.metrics.increment('http_requests_total', { method, route: routeLabel, status: String(status) })
-      deps.metrics.observe('http_request_duration_ms', durationMs, { method, route: routeLabel })
+      deps.metrics.increment('http_requests_total', {
+        method,
+        route: routeLabel,
+        status: String(status),
+        // One target now serves both estates, so the network has to be on the SERIES. Labelled
+        // per target it would say nothing — micro-org#398 in a form nothing could recover.
+        network: metricNetwork,
+      })
+      deps.metrics.observe('http_request_duration_ms', durationMs, {
+        method,
+        route: routeLabel,
+        network: metricNetwork,
+      })
     }
 
-    void handle(matched, { req, url, requestId, log, params }, deps)
+    // ── THE NETWORK, THEN THE HANDLE, BEFORE ANY ROUTE RUNS ──────────────────────────────────
+    //
+    // `requestNetwork` REFUSES an unstamped request rather than assuming mainnet: a 500 is a
+    // routing fault made loud, where a default is a cross-network write nothing would ever flag.
+    //
+    // The operational endpoints are exempt because kubelet and Prometheus do not come through the
+    // gateway and never send the header. Refusing them makes the pod never become ready.
+    const networkless = matched !== undefined && OPERATIONAL_ROUTES.has(matched.path)
+    let network: Network
+    try {
+      network = networkless
+        ? (deps.singleNetwork ?? deps.sql.networks[0] ?? 'mainnet')
+        : requestNetwork(req.headers, deps.singleNetwork ? { fallback: deps.singleNetwork } : {})
+    } catch (err) {
+      log.error('request carries no usable network', {
+        err: err instanceof NetworkUnknownError ? err.message : err,
+      })
+      send(
+        res,
+        errorReply(500, 'network_unknown', 'this request could not be attributed to a network', requestId),
+        requestId,
+      )
+      finish(500, 'unknown')
+      return
+    }
+
+    const sql = deps.sql.for(network) as unknown as Db
+    void handle(matched, { req, url, requestId, log, params, network, sql }, deps)
       .then((reply) => {
         send(res, reply, requestId)
-        finish(reply.status)
+        finish(reply.status, network)
       })
       .catch((err: unknown) => {
         log.error('request handler threw after mapping', { err })
         send(res, errorReply(500, 'internal', 'the request could not be completed', requestId), requestId)
-        finish(500)
+        finish(500, network)
       })
   })
 }
@@ -309,8 +383,8 @@ function buildRoutes(): Route[] {
      * An unusable asset is listed rather than omitted. Omitting it makes a client that iterates
      * the board silently forget the asset exists, which is how a deposit page loses a coin.
      */
-    define('GET', '/rates', async (_ctx, deps) => {
-      const records = await readQuotes(deps.sql)
+    define('GET', '/rates', async (ctx, deps) => {
+      const records = await readQuotes(ctx.sql)
       const byAsset = new Map(records.map((record) => [record.asset, record]))
       const rates = QUOTED_ASSETS.map((asset) =>
         rateView(asset, byAsset.get(asset) ?? null, deps.rateOptions),
@@ -320,7 +394,7 @@ function buildRoutes(): Route[] {
 
     define('GET', '/rates/:asset', async (ctx, deps) => {
       const asset = requireAsset(ctx)
-      const record = await readQuote(deps.sql, asset)
+      const record = await readQuote(ctx.sql, asset)
       const rate = rateView(asset, record, deps.rateOptions)
       // 200 even when the rate is unusable. The caller asked what this asset's rate is and this is
       // the answer, complete with the reason; a 404 would be a lie about the asset existing and a
@@ -361,7 +435,7 @@ function buildRoutes(): Route[] {
 
       const done = deps.lifecycle.track()
       try {
-        const price = await setAdministeredPrice(deps.sql, {
+        const price = await setAdministeredPrice(ctx.sql, {
           asset,
           usdScaled,
           setBy: actorOf(principal),
@@ -375,7 +449,7 @@ function buildRoutes(): Route[] {
           usdScaled: price.usdScaled.toString(),
           setBy: price.setBy,
         })
-        const rate = rateView(asset, await readQuote(deps.sql, asset), deps.rateOptions)
+        const rate = rateView(asset, await readQuote(ctx.sql, asset), deps.rateOptions)
         return {
           status: 200,
           body: {
@@ -396,7 +470,7 @@ function buildRoutes(): Route[] {
 
     define('GET', '/admin/prices', async (ctx, deps) => {
       await requireAdminAuthority(ctx, deps)
-      const prices = await readAdministered(deps.sql)
+      const prices = await readAdministered(ctx.sql)
       return {
         status: 200,
         body: {
@@ -422,7 +496,7 @@ function buildRoutes(): Route[] {
       await requireReadAuthority(ctx, deps)
       const asset = requireAsset(ctx)
       const limit = parseLimit(ctx.url.searchParams.get('limit'))
-      const entries = await readHistory(deps.sql, asset, limit)
+      const entries = await readHistory(ctx.sql, asset, limit)
       return {
         status: 200,
         body: {

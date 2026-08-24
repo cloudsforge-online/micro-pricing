@@ -6,6 +6,7 @@
  * shows what a deposit is worth, or let anyone read which operator set the EMBER price.
  */
 
+import { networkSql, type Sql as RuntimeSql } from '@cloudsforge/db'
 import { test, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AddressInfo } from 'node:net'
@@ -65,7 +66,8 @@ before(async () => {
     logger: new Logger({ service: 'pricing-test', level: 'fatal', sink: () => {} }),
     metrics,
     verifier,
-    sql: db,
+    sql: singleNetworkSql(db),
+    singleNetwork: 'mainnet' as const,
     rateOptions: { maxAgeSeconds: 300, conversionSpreadBps: 100 },
   })
   await new Promise<void>((resolve) => server.listen(0, () => resolve()))
@@ -315,3 +317,12 @@ test('an unmatched path is a 404 carrying the request id', { skip }, async () =>
   assert.equal(response.status, 404)
   assert.match(response.text, /"requestId"/)
 })
+
+/**
+ * One handle, presented as the per-network selector the server now takes. The fixture runs against
+ * a single test database, so mainnet is the only configured network — which exercises the REFUSAL
+ * path for free.
+ */
+function singleNetworkSql(db: unknown) {
+  return networkSql({ mainnet: db as RuntimeSql })
+}
