@@ -21,7 +21,7 @@
  */
 
 import postgres from 'postgres'
-import { assertSchemaAtLeast, type Sql as DbSql } from '@cloudsforge/db'
+import { assertSchemaAtLeast, type Sql as DbSql , networkSql, type Sql as RuntimeSql } from '@cloudsforge/db'
 import { JobQueue, JobRunner, type Sql as JobsSql } from '@cloudsforge/jobs'
 import { Verifier } from '@cloudsforge/auth'
 import { Lifecycle, httpProbe, installSignalHandlers, postgresProbe } from '@cloudsforge/lifecycle'
@@ -51,12 +51,20 @@ logger.info('starting', { version: env.version, schemaVersion: SCHEMA_VERSION })
 
 // 3. The database pool. Opened before the schema assertion because the assertion is a query, and
 //    before the Lifecycle because the readiness probe closes over it.
-const sql = postgres(env.databaseUrl, {
+const poolOptions = {
   max: env.databasePoolMax,
   // postgres.js writes notices to stderr as unstructured text by default, which is how a
   // connection string ends up in a log the collector cannot parse.
   onnotice: () => {},
-})
+}
+const sql = postgres(env.databaseUrl, poolOptions)
+
+// ── ONE HANDLE PER NETWORK THIS DEPLOYMENT SERVES ────────────────────────────────────────────
+//
+// `PRICING_DATABASE_URL_TESTNET` unset is the single-network case, which is every deployment until
+// the consolidation reaches this service. `networkSql` then holds one handle and REFUSES a testnet
+// request rather than answering it out of mainnet rows.
+const sqlTestnet = env.databaseUrlTestnet ? postgres(env.databaseUrlTestnet, poolOptions) : undefined
 
 // 4. Assert the schema. This does **not** migrate — the migrator job does. A replica of the new
 //    code serving rates from a `price_quotes` table that does not yet exist would answer 500 on
@@ -120,7 +128,12 @@ const server = createServer({
   logger,
   metrics,
   verifier,
-  sql: sql as unknown as Db,
+  // The SELECTOR, not a handle — routes use `ctx.sql`, resolved once per request.
+  sql: networkSql({
+    mainnet: sql as unknown as RuntimeSql,
+    ...(sqlTestnet ? { testnet: sqlTestnet as unknown as RuntimeSql } : {}),
+  }),
+  ...(env.singleNetwork ? { singleNetwork: env.singleNetwork as 'mainnet' | 'testnet' } : {}),
   rateOptions,
   // Sampled at scrape time rather than on a timer. There is no `setInterval` in this repository
   // and CI greps for one — rule 8. A scrape is already periodic, so the scrape is when to sample.
